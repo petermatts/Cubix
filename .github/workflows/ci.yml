@@ -1,4 +1,4 @@
-name: C++ CI
+name: Cubix CI
 
 on:
     push:
@@ -7,45 +7,26 @@ on:
         branches: ["**"]
 
 jobs:
-    build-and-test:
-        strategy:
-            matrix:
-                os: [ubuntu-latest, windows-latest, macos-latest]
-        continue-on-error: true #?
-        runs-on: ${{ matrix.os }}
-
+    build-linux:
+        runs-on: ubuntu-latest
         env:
             BUILD_DIR: build
-
         steps:
             - name: Checkout source
               uses: actions/checkout@v4
               with:
-                  submodules: recursive # If GoogleTest is added as a submodule
+                  submodules: recursive
 
-            # ===== Linux Setup =====
             - name: Install dependencies (Linux)
-              if: runner.os == 'Linux'
               run: |
                   sudo apt-get update
                   sudo apt-get install -y cmake g++-13 gcc-13 build-essential
+
             - name: Set compiler (Linux)
-              if: runner.os == 'Linux'
               run: |
                   echo "CC=gcc-13" >> $GITHUB_ENV
                   echo "CXX=g++-13" >> $GITHUB_ENV
 
-            # ===== macOS Setup =====
-            - name: Install dependencies (macOS)
-              if: runner.os == 'macOS'
-              run: brew install swig
-
-            # ===== Windows Setup =====
-            # - name: Install dependencies (Windows)
-            #   if: runner.os == 'Windows'
-            #   run: choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
-
-            # ===== Build & Test =====
             - name: Create build directory
               run: mkdir -p ${{ env.BUILD_DIR }}
 
@@ -56,23 +37,82 @@ jobs:
               run: cmake --build ${{ env.BUILD_DIR }} --config Release
 
             - name: Run tests
-              if: runner.os == 'Windows'
+              working-directory: ${{ env.BUILD_DIR }}/tests
+              run: ./cubix_tests
+
+            - name: Upload test logs (if failed)
+              if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: test-logs-linux
+                  path: ${{ env.BUILD_DIR }}/Testing/Temporary/LastTest.log
+
+    build-windows:
+        runs-on: windows-latest
+        env:
+            BUILD_DIR: build
+        steps:
+            - name: Checkout source
+              uses: actions/checkout@v4
+              with:
+                  submodules: recursive
+
+            # Add Windows dependencies if needed
+            # - name: Install dependencies (Windows)
+            #   run: choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
+
+            - name: Create build directory
+              run: mkdir ${{ env.BUILD_DIR }}
+
+            - name: Run CMake configure
+              run: cmake -S . -B ${{ env.BUILD_DIR }} -DCMAKE_BUILD_TYPE=Release
+
+            - name: Build the project
+              run: cmake --build ${{ env.BUILD_DIR }} --config Release
+
+            - name: Run tests
               run: |
                   robocopy solutions Release/solutions /e /mir /r:1 /w:1
                   cd Release
                   .\cubix_tests.exe
               working-directory: ${{ env.BUILD_DIR }}/tests
 
+            - name: Upload test logs (if failed)
+              if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: test-logs-windows
+                  path: ${{ env.BUILD_DIR }}/Testing/Temporary/LastTest.log
+
+    build-macos:
+        runs-on: macos-latest
+        env:
+            BUILD_DIR: build
+        steps:
+            - name: Checkout source
+              uses: actions/checkout@v4
+              with:
+                  submodules: recursive
+
+            - name: Install dependencies (macOS)
+              run: brew install swig
+
+            - name: Create build directory
+              run: mkdir -p ${{ env.BUILD_DIR }}
+
+            - name: Run CMake configure
+              run: cmake -S . -B ${{ env.BUILD_DIR }} -DCMAKE_BUILD_TYPE=Release
+
+            - name: Build the project
+              run: cmake --build ${{ env.BUILD_DIR }} --config Release
+
             - name: Run tests
-              if: runner.os == 'macOS' || runner.os == 'Linux'
               working-directory: ${{ env.BUILD_DIR }}/tests
-              run: |
-                  ./cubix_tests
-                  # ctest --output-on-failure --build-config Release
+              run: ./cubix_tests
 
             - name: Upload test logs (if failed)
               if: failure()
               uses: actions/upload-artifact@v4
               with:
-                  name: test-logs-${{ matrix.os }}
+                  name: test-logs-macos
                   path: ${{ env.BUILD_DIR }}/Testing/Temporary/LastTest.log
